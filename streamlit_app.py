@@ -2,11 +2,11 @@ import streamlit as st
 import json
 from nsepython import nse_optionchain_scrapper
 
-# Load stock symbols from JSON file
+# Load stock symbols from the uploaded JSON file
 def load_symbols(file_path):
     with open(file_path, "r") as file:
         data = json.load(file)
-    return data["stocks"]
+    return [stock["Symbol"] for stock in data]
 
 # Fetch options data for the selected stock
 def fetch_options_data(symbol, percentage_range=10):
@@ -40,24 +40,26 @@ def fetch_options_data(symbol, percentage_range=10):
 def main():
     st.title("Options Chain Viewer")
     
-    # Load stock symbols
-    symbols = load_symbols("symbols.json")
-    
-    # Sidebar for stock selection
-    selected_stock = st.sidebar.selectbox("Select a Stock:", symbols)
-    
-    # Display options data
-    if st.sidebar.button("Fetch Options Data"):
-        st.write(f"Fetching options data for {selected_stock}...")
-        calls, puts, spot_price, expiry_date = fetch_options_data(selected_stock)
+    # Load stock symbols from the JSON file
+    uploaded_file = st.file_uploader("Upload a JSON file with stock symbols", type=["json"])
+    if uploaded_file:
+        symbols = load_symbols(uploaded_file)
         
-        st.subheader(f"Options Data for {selected_stock} (Expiry: {expiry_date})")
+        # Sidebar for stock selection
+        selected_stock = st.sidebar.selectbox("Select a Stock:", symbols)
         
-        st.write("### Calls (±10% Strike Prices)")
-        st.table(calls)
+        # Display options data
+        if st.sidebar.button("Fetch Options Data"):
+            st.write(f"Fetching options data for {selected_stock}...")
+            calls, puts, spot_price, expiry_date = fetch_options_data(selected_stock)
+            
+            st.subheader(f"Options Data for {selected_stock} (Expiry: {expiry_date})")
+            
+            st.write("### Calls (±10% Strike Prices)")
+            st.table(calls)
 
-        st.write("### Puts (±10% Strike Prices)")
-        st.table(puts)
+            st.write("### Puts (±10% Strike Prices)")
+            st.table(puts)
 
 if __name__ == "__main__":
     main()
