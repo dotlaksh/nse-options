@@ -3,6 +3,7 @@ import json
 import yfinance as yf
 from nsepython import nse_optionchain_scrapper
 import pandas as pd
+import numpy as np
 
 # Load stock symbols from the constant largecap.json file
 def load_symbols():
@@ -21,18 +22,31 @@ def get_ohlc_data(symbol, start_date, end_date):
     ohlc_data = stock.history(period="1d", start=start_date, end=end_date)
     return ohlc_data[['Open', 'High', 'Low', 'Close']]
 
+# Generate all strike prices within ±10% of spot price
+def generate_strikes(spot_price, percentage_range=10, increment=50):
+    strikes = []
+    lower_bound = spot_price * (1 - percentage_range / 100)
+    upper_bound = spot_price * (1 + percentage_range / 100)
+    
+    # Generate strike prices from lower to upper bound with the specified increment
+    strike = lower_bound
+    while strike <= upper_bound:
+        strikes.append(round(strike, 2))
+        strike += increment
+    
+    return strikes
+
 # Fetch options data for the selected stock
-def fetch_options_data(symbol, percentage_range=10):
+def fetch_options_data(symbol, percentage_range=10, increment=50):
     # Get spot price
     spot_price = get_spot_price(symbol)
     st.write(f"Spot Price for {symbol}: {spot_price}")
     
-    # Calculate strike prices ±10%
-    lower_strike = spot_price * (1 - percentage_range / 100)
-    upper_strike = spot_price * (1 + percentage_range / 100)
-    st.write(f"Strike Prices: {lower_strike} (Put), {upper_strike} (Call)")
+    # Generate strike prices within ±10%
+    strikes = generate_strikes(spot_price, percentage_range, increment)
+    st.write(f"Strike Prices: {strikes}")
     
-    return lower_strike, upper_strike
+    return strikes, spot_price
 
 # Streamlit app
 def main():
@@ -52,8 +66,8 @@ def main():
     if st.sidebar.button("Fetch Options OHLC Data"):
         st.write(f"Fetching OHLC data for options ±10% of spot price for {selected_stock}...")
         
-        # Get strike prices ±10% away from spot
-        lower_strike, upper_strike = fetch_options_data(selected_stock)
+        # Get strikes and spot price
+        strikes, spot_price = fetch_options_data(selected_stock)
         
         # Fetch OHLC data for the stock
         stock_ohlc = get_ohlc_data(selected_stock, start_date, end_date)
@@ -63,8 +77,11 @@ def main():
         # Display the strike prices as a simulation for options OHLC data
         # Simulate OHLC data for options (Note: This is not real OHLC data, but a simulation)
         simulated_ohlc = stock_ohlc.copy()
-        simulated_ohlc['Call Strike Price'] = upper_strike
-        simulated_ohlc['Put Strike Price'] = lower_strike
+        
+        # Simulate data for each strike price
+        for strike in strikes:
+            simulated_ohlc[f"Call Strike {strike}"] = spot_price * 1.1  # Simulate call option strike
+            simulated_ohlc[f"Put Strike {strike}"] = spot_price * 0.9   # Simulate put option strike
         
         st.subheader(f"Simulated OHLC for Options (±10% Strike Prices)")
         st.write(simulated_ohlc)
