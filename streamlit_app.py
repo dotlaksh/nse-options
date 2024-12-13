@@ -4,6 +4,7 @@ import yfinance as yf
 from nsepython import nse_optionchain_scrapper
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
 # Load stock symbols from the constant largecap.json file
 def load_symbols():
@@ -11,55 +12,36 @@ def load_symbols():
         data = json.load(file)
     return [stock["Symbol"] for stock in data]
 
-# Fetch the spot price using nsepython
-def get_spot_price(symbol):
+# Fetch the spot price and options data using nsepython
+def get_options_data(symbol):
     try:
         data = nse_optionchain_scrapper(symbol)
         spot_price = data['records']['underlyingValue']
-        return spot_price
+        options_data = data['records']['data']
+        return spot_price, options_data
     except Exception as e:
-        st.error(f"Error fetching spot price for {symbol}: {e}")
-        return None
+        st.error(f"Error fetching options data for {symbol}: {e}")
+        return None, None
+
+# Filter options data based on strike price range
+def filter_options_data(options_data, spot_price, percentage_range=10):
+    lower_bound = spot_price * (1 - percentage_range / 100)
+    upper_bound = spot_price * (1 + percentage_range / 100)
+    
+    filtered_data = [option for option in options_data if lower_bound <= option['strikePrice'] <= upper_bound]
+    return filtered_data
 
 # Fetch OHLC data from Yahoo Finance
 def get_ohlc_data(symbol, start_date, end_date):
     try:
-        stock = yf.Ticker(symbol)
-        ohlc_data = stock.history(period="1d", start=start_date, end=end_date)
+        stock = yf.Ticker(f"{symbol}.NS")
+        ohlc_data = stock.history(start=start_date, end=end_date)
         if ohlc_data.empty:
             st.warning(f"No OHLC data found for {symbol} in the specified date range.")
         return ohlc_data[['Open', 'High', 'Low', 'Close']] if not ohlc_data.empty else None
     except Exception as e:
         st.error(f"Error fetching OHLC data for {symbol}: {e}")
         return None
-
-# Generate all strike prices within ±10% of spot price
-def generate_strikes(spot_price, percentage_range=10, increment=50):
-    strikes = []
-    lower_bound = spot_price * (1 - percentage_range / 100)
-    upper_bound = spot_price * (1 + percentage_range / 100)
-    
-    # Generate strike prices from lower to upper bound with the specified increment
-    strike = lower_bound
-    while strike <= upper_bound:
-        strikes.append(round(strike, 2))
-        strike += increment
-    
-    return strikes
-
-# Fetch options data for the selected stock
-def fetch_options_data(symbol, percentage_range=10, increment=50):
-    # Get spot price
-    spot_price = get_spot_price(symbol)
-    if spot_price is None:
-        return [], None  # If spot price isn't fetched, return empty
-    st.write(f"Spot Price for {symbol}: {spot_price}")
-    
-    # Generate strike prices within ±10%
-    strikes = generate_strikes(spot_price, percentage_range, increment)
-    st.write(f"Generated Strike Prices: {strikes}")
-    
-    return strikes, spot_price
 
 # Streamlit app
 def main():
@@ -72,18 +54,25 @@ def main():
     selected_stock = st.sidebar.selectbox("Select a Stock:", symbols)
     
     # Input dates for OHLC data
-    start_date = st.sidebar.date_input("Start Date")
-    end_date = st.sidebar.date_input("End Date")
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=30)  # Default to last 30 days
+    start_date = st.sidebar.date_input("Start Date", value=start_date)
+    end_date = st.sidebar.date_input("End Date", value=end_date)
     
     # Display options data
     if st.sidebar.button("Fetch Options OHLC Data"):
         st.write(f"Fetching OHLC data for options ±10% of spot price for {selected_stock}...")
         
-        # Get strikes and spot price
-        strikes, spot_price = fetch_options_data(selected_stock)
-        if not strikes:
+        # Get spot price and options data
+        spot_price, options_data = get_options_data(selected_stock)
+        if spot_price is None or options_data is None:
             st.warning(f"No data available for {selected_stock}.")
             return
+        
+        st.write(f"Spot Price for {selected_stock}: {spot_price}")
+        
+        # Filter options data
+        filtered_options = filter_options_data(options_data, spot_price)
         
         # Fetch OHLC data for the stock
         stock_ohlc = get_ohlc_data(selected_stock, start_date, end_date)
@@ -94,15 +83,22 @@ def main():
         st.subheader(f"OHLC Data for {selected_stock}")
         st.write(stock_ohlc)
         
-        # Simulate options OHLC data for each strike
-        simulated_ohlc = stock_ohlc.copy()
+        # Display options data
+        st.subheader(f"Options Data (±10% Strike Prices)")
         
-        for strike in strikes:
-            simulated_ohlc[f"Call Strike {strike}"] = spot_price * 1.1  # Simulate call option strike
-            simulated_ohlc[f"Put Strike {strike}"] = spot_price * 0.9   # Simulate put option strike
+        # Separate calls and puts
+        calls = [option for option in filtered_options if 'CE' in option]
+        puts = [option for option in filtered_options if 'PE' in option]
         
-        st.subheader(f"Simulated OHLC for Options (±10% Strike Prices)")
-        st.write(simulated_ohlc)
+        # Display calls
+        st.write("Call Options:")
+        calls_df = pd.DataFrame(calls)
+        st.write(calls_df[['strikePrice', 'CE.lastPrice', 'CE.openInterest', 'CE.changeinOpenInterest']])
+        
+        # Display puts
+        st.write("Put Options:")
+        puts_df = pd.DataFrame(puts)
+        st.write(puts_df[['strikePrice', 'PE.lastPrice', 'PE.openInterest', 'PE.changeinOpenInterest']])
 
 if __name__ == "__main__":
     main()
