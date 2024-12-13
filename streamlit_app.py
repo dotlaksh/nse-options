@@ -3,9 +3,9 @@ import json
 from nsepython import nse_optionchain_scrapper
 
 # Load stock symbols from the uploaded JSON file
-def load_symbols(file_path):
-    with open(file_path, "r") as file:
-        data = json.load(file)
+def load_symbols(uploaded_file):
+    # Read JSON content directly from the UploadedFile object
+    data = json.load(uploaded_file)
     return [stock["Symbol"] for stock in data]
 
 # Fetch options data for the selected stock
@@ -40,10 +40,10 @@ def fetch_options_data(symbol, percentage_range=10):
 def main():
     st.title("Options Chain Viewer")
     
-    # Load stock symbols from the JSON file
+    # Upload the JSON file
     uploaded_file = st.file_uploader("Upload a JSON file with stock symbols", type=["json"])
     if uploaded_file:
-        symbols = load_symbols(uploaded_file)
+        symbols = load_symbols(uploaded_file)  # Use the corrected function
         
         # Sidebar for stock selection
         selected_stock = st.sidebar.selectbox("Select a Stock:", symbols)
